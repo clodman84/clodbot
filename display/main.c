@@ -100,11 +100,11 @@ void draw_settings(Settings *settings) {
   int PANEL_HEIGHT = 352;
   int SLIDER_X = PANEL_X + 76;
   int SLIDER_Y = PANEL_Y + 38;
-  int SLIDER_WIDTH = 200;
+  int SLIDER_WIDTH = 212;
   int SLIDER_HEIGHT = 22;
   int NEXT = 28;
 
-  int WIFI_X = PANEL_X + 14;
+  int WIFI_X = PANEL_X + 12;
   int WIFI_WIDTH = SLIDER_X + SLIDER_WIDTH - WIFI_X;
   int WIFI_HEIGHT = SLIDER_HEIGHT;
   int WIFI_Y = SLIDER_Y + NEXT * 3.5;
@@ -115,7 +115,7 @@ void draw_settings(Settings *settings) {
                "Brightness", "", &settings->brightness, 0, 100);
   GuiSliderBar(
       (Rectangle){SLIDER_X, SLIDER_Y + NEXT, SLIDER_WIDTH, SLIDER_HEIGHT},
-      "Volume", "", &settings->volume, 0, 100);
+      "Volume    ", "", &settings->volume, 0, 100);
   GuiLine((Rectangle){PANEL_X, SLIDER_Y + NEXT * 2.5, PANEL_WIDTH, 0},
           "#189#WiFi");
 
@@ -208,9 +208,8 @@ int main() {
 
     BeginDrawing();
     ClearBackground(BLACK);
-    DrawTexturePro(video->texture, (Rectangle){0, 0, frame_width, frame_height},
-                   (Rectangle){0, 0, frame_width, frame_height},
-                   (Vector2){0, 0}, 0.0f, WHITE);
+    DrawTexture(video->texture, 0, 0, WHITE);
+
     if (GuiButton((Rectangle){676, 24, 100, 24}, "#191#Settings"))
       show_settings = !show_settings;
 
