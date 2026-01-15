@@ -15,7 +15,7 @@ static void draw_settings() {
   int PANEL_X = 24;
   int PANEL_Y = 24;
   int PANEL_WIDTH = 300;
-  int PANEL_HEIGHT = 352;
+  int PANEL_HEIGHT = 480 - 2 * PANEL_Y;
   int SLIDER_X = PANEL_X + 76;
   int SLIDER_Y = PANEL_Y + 38;
   int SLIDER_WIDTH = 212;

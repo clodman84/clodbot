@@ -29,6 +29,22 @@ void on_nm_state_changed(NMClient *client, GParamSpec *pspec,
   }
 }
 
+static NMConnection *find_existing_wifi_connection(NMClient *client,
+                                                   NMAccessPoint *ap);
+
+static void on_device_state_changed(NMDevice *device, GParamSpec *pspec,
+                                    gpointer user_data) {
+  NMDeviceState state = nm_device_get_state(device);
+
+  if (state != NM_DEVICE_STATE_FAILED)
+    return;
+
+  NMConnection *conn =
+      find_existing_wifi_connection(wifi.client, wifi.attempt_ap);
+  nm_remote_connection_delete_async(NM_REMOTE_CONNECTION(conn), NULL, NULL,
+                                    NULL);
+}
+
 void wifi_init() {
   // init wifi client
   GError *error = NULL;
@@ -54,6 +70,8 @@ void wifi_init() {
 
   g_signal_connect(wifi.client, "notify::state",
                    G_CALLBACK(on_nm_state_changed), NULL);
+  g_signal_connect(wifi.device, "notify::state",
+                   G_CALLBACK(on_device_state_changed), NULL);
 }
 
 void wifi_scan() {
