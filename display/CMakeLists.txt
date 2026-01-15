@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 
 option(RASPI "Build for Raspberry Pi (DRM/GLES backend)" OFF)
 
-add_executable(${PROJECT_NAME} main.c video.c control.c)
+add_executable(${PROJECT_NAME} main.c video.c control.c settings.c)
 
 # ----------------------------------------
 # Normal desktop build (raylib via CMake)

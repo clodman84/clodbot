@@ -1,10 +1,8 @@
 #include "control.h"
+#include "settings.h"
 #include "video.h"
-#include <glib.h>
-#include <libnm/NetworkManager.h>
 #include <raylib.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <vlc/vlc.h>
 
 #define RAYGUI_IMPLEMENTATION
@@ -13,87 +11,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-typedef struct {
-  float brightness;
-  float volume;
-} Settings;
-
-typedef struct {
-  NMClient *client;
-  GHashTable *best_aps;
-  bool scan_complete;
-} WifiState;
-
-static WifiState wifi = {0};
-
-static void wifi_init() {
-  // init wifi client
-  GError *error = NULL;
-  wifi.client = nm_client_new(NULL, &error);
-  if (!wifi.client) {
-    fprintf(stderr, "NMClient error: %s\n", error->message);
-    g_error_free(error);
-    return;
-  }
-  wifi.best_aps = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
-  wifi.scan_complete = false;
-}
-
-static void wifi_scan_done_cb(GObject *source, GAsyncResult *res,
-                              gpointer user_data) {
-  GError *error = NULL;
-
-  if (!nm_device_wifi_request_scan_finish(NM_DEVICE_WIFI(source), res,
-                                          &error)) {
-    if (error) {
-      fprintf(stderr, "WiFi scan failed: %s\n", error->message);
-      g_error_free(error);
-    }
-  }
-  // Signal render thread that scan results are ready
-  wifi.scan_complete = true;
-}
-
-static void wifi_scan() {
-  const GPtrArray *devices = nm_client_get_devices(wifi.client);
-  g_hash_table_remove_all(wifi.best_aps);
-  g_hash_table_destroy(wifi.best_aps);
-  wifi.best_aps =
-      g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_object_unref);
-
-  for (guint i = 0; i < devices->len; i++) {
-    NMDevice *dev = devices->pdata[i];
-    if (!NM_IS_DEVICE_WIFI(dev))
-      continue;
-    GError *error = NULL;
-
-    wifi.scan_complete = false;
-    nm_device_wifi_request_scan_async(NM_DEVICE_WIFI(dev), NULL,
-                                      wifi_scan_done_cb, NULL);
-
-    NMDeviceWifi *wifi_dev = NM_DEVICE_WIFI(dev);
-    const GPtrArray *aps = nm_device_wifi_get_access_points(wifi_dev);
-    for (guint j = 0; j < aps->len; j++) {
-      NMAccessPoint *ap = aps->pdata[j];
-      GBytes *ssid_bytes = nm_access_point_get_ssid(ap);
-      if (!ssid_bytes)
-        continue;
-
-      gsize len;
-      const char *data = g_bytes_get_data(ssid_bytes, &len);
-      char *ssid = g_strndup(data, len);
-
-      NMAccessPoint *best = g_hash_table_lookup(wifi.best_aps, ssid);
-      if (!best ||
-          nm_access_point_get_strength(ap) > nm_access_point_get_strength(best))
-        g_hash_table_insert(wifi.best_aps, ssid, g_object_ref(ap));
-      else
-        g_free(ssid);
-    }
-  }
-}
-
-void draw_settings(Settings *settings) {
+static void draw_settings() {
   int PANEL_X = 24;
   int PANEL_Y = 24;
   int PANEL_WIDTH = 300;
@@ -107,52 +25,75 @@ void draw_settings(Settings *settings) {
   int WIFI_X = PANEL_X + 12;
   int WIFI_WIDTH = SLIDER_X + SLIDER_WIDTH - WIFI_X;
   int WIFI_HEIGHT = SLIDER_HEIGHT;
-  int WIFI_Y = SLIDER_Y + NEXT * 3.5;
+  int WIFI_Y = SLIDER_Y + NEXT * 3.2;
 
   GuiPanel((Rectangle){PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT},
            "#141#Settings");
   GuiSliderBar((Rectangle){SLIDER_X, SLIDER_Y, SLIDER_WIDTH, SLIDER_HEIGHT},
-               "Brightness", "", &settings->brightness, 0, 100);
+               "Brightness", "", &settings.brightness, 0, 100);
   GuiSliderBar(
       (Rectangle){SLIDER_X, SLIDER_Y + NEXT, SLIDER_WIDTH, SLIDER_HEIGHT},
-      "Volume    ", "", &settings->volume, 0, 100);
-  GuiLine((Rectangle){PANEL_X, SLIDER_Y + NEXT * 2.5, PANEL_WIDTH, 0},
-          "#189#WiFi");
+      "Volume    ", "", &settings.volume, 0, 100);
 
-  if (GuiButton((Rectangle){WIFI_X, WIFI_Y, 80, WIFI_HEIGHT}, "Scan")) {
+  char wifi_state_string[64];
+
+  switch (wifi.state) {
+  case NM_STATE_CONNECTED_SITE:
+  case NM_STATE_CONNECTED_LOCAL:
+    sprintf(wifi_state_string, "#189# Connected (No Internet)");
+    break;
+  case NM_STATE_CONNECTED_GLOBAL:
+    GBytes *ssid_bytes = nm_access_point_get_ssid(wifi.current_ap);
+    gsize len;
+    const char *data = g_bytes_get_data(ssid_bytes, &len);
+    char *ssid = g_strndup(data, len);
+    nm_access_point_get_strength(wifi.current_ap);
+    sprintf(wifi_state_string, "#189# Connected to %s", ssid);
+    break;
+  case NM_STATE_CONNECTING:
+    sprintf(wifi_state_string, "#189# Connecting...");
+    break;
+  case NM_STATE_DISCONNECTING:
+    sprintf(wifi_state_string, "#189# Disconnecting...");
+    break;
+  case NM_STATE_DISCONNECTED:
+    sprintf(wifi_state_string, "#189# Disconnected");
+    break;
+  case NM_STATE_ASLEEP:
+    sprintf(wifi_state_string, "#189# Asleep");
+    break;
+  case NM_STATE_UNKNOWN:
+    sprintf(wifi_state_string, "#189# Unknown");
+    break;
+  }
+  GuiLine((Rectangle){PANEL_X, SLIDER_Y + NEXT * 2.5, PANEL_WIDTH, 0},
+          wifi_state_string);
+
+  if (GuiButton((Rectangle){WIFI_X, WIFI_Y, 80, 20}, "Scan")) {
     wifi_scan();
   }
 
-  if (wifi.scan_complete) {
-    int y = 1;
-    GHashTableIter iter;
-    gpointer key, value;
-    char label[128];
-    g_hash_table_iter_init(&iter, wifi.best_aps);
-    while (g_hash_table_iter_next(&iter, &key, &value)) {
-      NMAccessPoint *ap = value;
-      snprintf(label, sizeof(label), "%-15s (%u%%)", (char *)key,
-               nm_access_point_get_strength(ap));
-      GuiButton((Rectangle){WIFI_X, WIFI_Y + NEXT * y, WIFI_WIDTH, WIFI_HEIGHT},
-                label);
-      y += 1;
-    }
+  int y = 1;
+  GHashTableIter iter;
+  gpointer key, value;
+  char label[128];
+  g_hash_table_iter_init(&iter, wifi.best_aps);
+  while (g_hash_table_iter_next(&iter, &key, &value)) {
+    NMAccessPoint *ap = value;
+    snprintf(label, sizeof(label), "%-15s (%u%%)", (char *)key,
+             nm_access_point_get_strength(ap));
+    GuiButton((Rectangle){WIFI_X, WIFI_Y + NEXT * y, WIFI_WIDTH, WIFI_HEIGHT},
+              label);
+    y += 1;
   }
 }
 
-static void pump_glib(void) {
-  while (g_main_context_iteration(NULL, FALSE))
-    ;
-}
-
 int main() {
-
   const unsigned int frame_width = 800, frame_height = 480;
   libvlc_instance_t *vlc_instance;
   char const *vlc_argv[] = {"--no-audio", "--no-xlib"};
-  Settings settings = {100.0, 100.0};
-  wifi_init();
 
+  // set up vlc
   char *path = "./no_distort_264.mp4\0";
   int vlc_argc = sizeof(vlc_argv) / sizeof(*vlc_argv);
   vlc_instance = libvlc_new(vlc_argc, vlc_argv);
@@ -161,11 +102,14 @@ int main() {
     return 1;
   } else
     printf("Successfully initialised libVLC instance\n");
-
   Video *video =
       make_video_from_path(vlc_instance, path, frame_width, frame_height);
 
+  // set up control socket
   Remote *remote = start_listening();
+
+  // set up wifi
+  wifi_init();
 
   SetTargetFPS(60);
   InitWindow(frame_width, frame_height, "clodbot");
@@ -184,9 +128,9 @@ int main() {
   bool show_settings = true;
 
   while (!WindowShouldClose()) {
+    g_main_context_iteration(NULL, FALSE);
     // updating the texture if we have new data from VLC
     // maintains original FPS of the video
-    pump_glib();
     if (video->needUpdate) {
       pthread_mutex_lock(&video->mutex);
       UpdateTexture(video->texture, video->buffer);
@@ -214,7 +158,7 @@ int main() {
       show_settings = !show_settings;
 
     if (show_settings)
-      draw_settings(&settings);
+      draw_settings();
 
     EndDrawing();
   }
