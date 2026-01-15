@@ -43,12 +43,7 @@ static void draw_settings() {
     sprintf(wifi_state_string, "#189# Connected (No Internet)");
     break;
   case NM_STATE_CONNECTED_GLOBAL:
-    GBytes *ssid_bytes = nm_access_point_get_ssid(wifi.current_ap);
-    gsize len;
-    const char *data = g_bytes_get_data(ssid_bytes, &len);
-    char *ssid = g_strndup(data, len);
-    nm_access_point_get_strength(wifi.current_ap);
-    sprintf(wifi_state_string, "#189# Connected to %s", ssid);
+    sprintf(wifi_state_string, "#189# Connected to %s", wifi.current_ssid);
     break;
   case NM_STATE_CONNECTING:
     sprintf(wifi_state_string, "#189# Connecting...");
@@ -82,9 +77,35 @@ static void draw_settings() {
     NMAccessPoint *ap = value;
     snprintf(label, sizeof(label), "%-15s (%u%%)", (char *)key,
              nm_access_point_get_strength(ap));
-    GuiButton((Rectangle){WIFI_X, WIFI_Y + NEXT * y, WIFI_WIDTH, WIFI_HEIGHT},
-              label);
+    if (GuiButton(
+            (Rectangle){WIFI_X, WIFI_Y + NEXT * y, WIFI_WIDTH, WIFI_HEIGHT},
+            label)) {
+      if (!wifi_connect(ap)) {
+        wifi.attempt_ap = ap;
+        wifi.show_connection_dialog = true;
+      }
+    };
     y += 1;
+  }
+}
+
+void draw_connection_dialog() {
+  Rectangle box = {200, 120, 360, 200};
+  char dialog[64];
+  sprintf(dialog, "Connecting to %s", get_ssid(wifi.attempt_ap));
+  GuiPanel(box, dialog);
+  GuiLabel((Rectangle){box.x + 20, box.y + 75, 100, 20}, "Password:");
+
+  GuiTextBox((Rectangle){box.x + 120, box.y + 75, 200, 24}, wifi.password,
+             sizeof(wifi.password), true);
+
+  if (GuiButton((Rectangle){box.x + 40, box.y + 140, 120, 30}, "Connect")) {
+    wifi_new_connection();
+    wifi.show_connection_dialog = false;
+  }
+
+  if (GuiButton((Rectangle){box.x + 200, box.y + 140, 120, 30}, "Cancel")) {
+    wifi.show_connection_dialog = false;
   }
 }
 
@@ -154,11 +175,14 @@ int main() {
     ClearBackground(BLACK);
     DrawTexture(video->texture, 0, 0, WHITE);
 
-    if (GuiButton((Rectangle){676, 24, 100, 24}, "#191#Settings"))
+    if (GuiButton((Rectangle){676, 24, 100, 24}, "#141# Settings"))
       show_settings = !show_settings;
 
     if (show_settings)
       draw_settings();
+
+    if (wifi.show_connection_dialog)
+      draw_connection_dialog();
 
     EndDrawing();
   }
