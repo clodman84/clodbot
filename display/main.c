@@ -11,9 +11,29 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+int PANEL_X = 24;
+int PANEL_Y = 24;
+
+typedef enum { SLIDE_OUT, SLIDE_IN, STATIC } SettingsAnimation;
+SettingsAnimation settings_state = STATIC;
+
 static void draw_settings() {
-  int PANEL_X = 24;
-  int PANEL_Y = 24;
+  switch (settings_state) {
+  case STATIC:
+    break;
+  case SLIDE_IN:
+    if (PANEL_X < 24)
+      PANEL_X += 75;
+    else
+      settings_state = STATIC;
+    break;
+  case SLIDE_OUT:
+    if (PANEL_X > -150)
+      PANEL_X -= 75;
+    else
+      settings_state = STATIC;
+    break;
+  }
   int PANEL_WIDTH = 300;
   int PANEL_HEIGHT = 480 - 2 * PANEL_Y;
   int SLIDER_X = PANEL_X + 76;
@@ -83,6 +103,7 @@ static void draw_settings() {
       if (!wifi_connect(ap)) {
         wifi.attempt_ap = ap;
         wifi.show_connection_dialog = true;
+        settings_state = SLIDE_OUT;
       }
     };
     y += 1;
@@ -102,10 +123,12 @@ void draw_connection_dialog() {
   if (GuiButton((Rectangle){box.x + 40, box.y + 140, 120, 30}, "Connect")) {
     wifi_new_connection();
     wifi.show_connection_dialog = false;
+    settings_state = SLIDE_IN;
   }
 
   if (GuiButton((Rectangle){box.x + 200, box.y + 140, 120, 30}, "Cancel")) {
     wifi.show_connection_dialog = false;
+    settings_state = SLIDE_IN;
   }
 }
 
@@ -175,7 +198,7 @@ int main() {
     ClearBackground(BLACK);
     DrawTexture(video->texture, 0, 0, WHITE);
 
-    if (GuiButton((Rectangle){676, 24, 100, 24}, "#141# Settings"))
+    if (GuiButton((Rectangle){726, 24, 50, 24}, "#141#"))
       show_settings = !show_settings;
 
     if (show_settings)
